@@ -24,5 +24,10 @@ subtask(TASK_COMPILE_SOLIDITY_GET_SOLC_BUILD, async (args, hre, runSuper) => {
 })
 
 module.exports = {
-  solidity: '0.8.16'
+  solidity: '0.8.16',
+  networks: {
+    localhost: {
+      url: 'http://127.0.0.1:8545'
+    }
+  }
 }
