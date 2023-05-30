@@ -5,7 +5,7 @@ pragma solidity ^0.8.16;
 contract DemandList {
     mapping(address => uint256) public tokenBalances; // 用户地址对应的平台发放的代币余额
     mapping(uint256 => Demand) public demands; // 需求单ID对应的需求单结构
-    uint256 public demandCount; // 需求单号计数器
+    uint256 public demandCount; // 需求单计数器
 
     // 需求单结构
     struct Demand {
