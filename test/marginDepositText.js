@@ -15,8 +15,8 @@ describe('MarginDeposit', function () {
     return { deposit, owner, otherAccount }
   }
 
-  describe('Transfer-in margin', function () {
-    it('Deposit deposit and query deposit balance', async function () {
+  describe('存入保证金', function () {
+    it('存款和查询存款余额', async function () {
       const { deposit, otherAccount } = await loadFixture(deployMarginDeposit)
       const requestId = 1
       const amount = 100
@@ -24,7 +24,7 @@ describe('MarginDeposit', function () {
       const res = await deposit.getDeposit(requestId)
       expect(res).to.equal(amount)
     })
-    it('The margin should be greater than zero', async function () {
+    it('余额应该大于零', async function () {
       const { deposit, otherAccount } = await loadFixture(deployMarginDeposit)
       const requestId = 1
       const amount = 0
