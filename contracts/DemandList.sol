@@ -7,7 +7,7 @@ contract DemandList {
     mapping(uint256 => Demand) public demands; // 需求单ID对应的需求单结构
     uint256 public demandCount; // 需求单计数器
 
-    // 需求单结构
+    // 需求单结构体
     struct Demand {
         address creator;
         address acceptor;

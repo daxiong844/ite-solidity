@@ -20,7 +20,7 @@ describe('DemandList', function () {
   }
 
   describe('创建需求单', function () {
-    it('应成功创建需求单', async function () {
+    it('成功创建需求单', async function () {
       const { deposit, otherAccount } = await loadFixture(deployDemandList)
       await deposit.connect(otherAccount).createDemand()
 
@@ -36,7 +36,7 @@ describe('DemandList', function () {
   })
 
   describe('接受需求单', function () {
-    it('应成功接受需求单', async function () {
+    it('成功接受需求单', async function () {
       const { deposit, otherAccount } = await loadFixture(deployDemandList)
 
       await deposit.createDemand()
@@ -69,7 +69,7 @@ describe('DemandList', function () {
   })
 
   describe('删除需求单', function () {
-    it('应成功删除需求单', async function () {
+    it('成功删除需求单', async function () {
       const { deposit, owner } = await loadFixture(deployDemandList)
 
       await deposit.createDemand()
