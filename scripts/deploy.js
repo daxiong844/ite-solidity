@@ -7,12 +7,12 @@
 const hre = require('hardhat')
 
 async function main() {
-  const MarginDeposit = await hre.ethers.getContractFactory('MarginDeposit')
-  const marginDeposit = await MarginDeposit.deploy()
+  const DemandList = await hre.ethers.getContractFactory('DemandList')
+  const demandList = await DemandList.deploy()
 
-  await marginDeposit.deployed()
+  await demandList.deployed()
 
-  console.log(`MarginDeposit  deployed to ${marginDeposit.address}`)
+  console.log(`DemandList  deployed to ${demandList.address}`)
 }
 
 // We recommend this pattern to be able to use async/await everywhere
@@ -21,3 +21,6 @@ main().catch(error => {
   console.error(error)
   process.exitCode = 1
 })
+
+// DemandList合约地址：
+// 0x5fbdb2315678afecb367f032d93f642f64180aa3
