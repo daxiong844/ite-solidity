@@ -89,4 +89,218 @@ describe('MarginContract', function () {
       await expect(marginContract.connect(acceptor).addDeposit(demandId, { value: depositAmount })).to.be.revertedWith("Deposit amount should be 1.5-2 times the creator's deposit")
     })
   })
+
+  describe('提取保证金', function () {
+    it('创建者成功提取保证金', async function () {
+      const { demandList, creator, acceptor, marginContract } = await loadFixture(deployMarginContract)
+
+      // 创建需求单
+      await demandList.connect(creator).createDemand()
+      const demandId = 0
+      // 接受需求单
+      await demandList.connect(acceptor).acceptDemand(demandId)
+      const depositAmount = await ethers.utils.parseEther('1')
+      // 添加保证金
+      await marginContract.connect(creator).addDeposit(demandId, { value: depositAmount })
+      // 提取保证金
+      await marginContract.connect(creator).withdrawDeposit(demandId)
+
+      await expect(marginContract.connect(creator).withdrawDeposit(demandId)).to.be.revertedWith("Creator's deposit already withdrawn")
+    })
+    it('接受者成功提取保证金', async function () {
+      const { demandList, creator, acceptor, marginContract } = await loadFixture(deployMarginContract)
+
+      // 创建需求单
+      await demandList.connect(creator).createDemand()
+      const demandId = 0
+      // 接受需求单
+      await demandList.connect(acceptor).acceptDemand(demandId)
+      const creatorDepositAmount = ethers.utils.parseEther('1')
+      const acceptorDepositAmount = ethers.utils.parseEther('1.5')
+      // 添加保证金
+      await marginContract.connect(creator).addDeposit(demandId, { value: creatorDepositAmount })
+      await marginContract.connect(acceptor).addDeposit(demandId, { value: acceptorDepositAmount })
+      // 提取保证金
+      await marginContract.connect(acceptor).withdrawDeposit(demandId)
+
+      await expect(marginContract.connect(acceptor).withdrawDeposit(demandId)).to.be.revertedWith("Acceptor's deposit already withdrawn")
+    })
+    it('既不是本需求单的创建者,也不是接受者的用户不可以提取保证金', async function () {
+      const { demandList, creator, acceptor, marginContract, otherAccount } = await loadFixture(deployMarginContract)
+
+      // 创建需求单
+      await demandList.connect(creator).createDemand()
+      const demandId = 0
+      // 接受需求单
+      await demandList.connect(acceptor).acceptDemand(demandId)
+      const depositAmount = ethers.utils.parseEther('1')
+      // 添加保证金
+      await marginContract.connect(creator).addDeposit(demandId, { value: depositAmount })
+
+      await expect(marginContract.connect(otherAccount).withdrawDeposit(demandId)).to.be.revertedWith('You do not meet the requirements')
+    })
+    it('如果没有保证金,则不可以提取', async function () {
+      const { demandList, creator, acceptor, marginContract } = await loadFixture(deployMarginContract)
+
+      // 创建需求单
+      await demandList.connect(creator).createDemand()
+      const demandId = 0
+      // 接受需求单
+      await demandList.connect(acceptor).acceptDemand(demandId)
+
+      await expect(marginContract.connect(creator).withdrawDeposit(demandId)).to.be.revertedWith('Deposit not added')
+    })
+  })
+
+  describe('锁定保证金', function () {
+    it('成功锁定保证金', async function () {
+      const { demandList, creator, acceptor, marginContract } = await loadFixture(deployMarginContract)
+
+      // 创建需求单
+      await demandList.connect(creator).createDemand()
+      const demandId = 0
+      // 接受需求单
+      await demandList.connect(acceptor).acceptDemand(demandId)
+      const creatorDepositAmount = ethers.utils.parseEther('1')
+      const acceptorDepositAmount = ethers.utils.parseEther('1.5')
+      // 添加保证金
+      await marginContract.connect(creator).addDeposit(demandId, { value: creatorDepositAmount })
+      await marginContract.connect(acceptor).addDeposit(demandId, { value: acceptorDepositAmount })
+      // 锁定保证金
+      await marginContract.connect(creator).lockDeposit(demandId)
+
+      const margin = await marginContract.margins(demandId)
+      expect(margin.isDepositLocked).to.be.true
+    })
+    it('如果没有添加保证金,则不可以锁定', async function () {
+      const { demandList, creator, acceptor, marginContract } = await loadFixture(deployMarginContract)
+
+      // 创建需求单
+      await demandList.connect(creator).createDemand()
+      const demandId = 0
+      // 接受需求单
+      await demandList.connect(acceptor).acceptDemand(demandId)
+
+      await expect(marginContract.connect(creator).lockDeposit(demandId)).to.be.revertedWith('Deposit not added')
+    })
+    it('如果保证金已经锁定,则不可以再次锁定', async function () {
+      const { demandList, creator, acceptor, marginContract } = await loadFixture(deployMarginContract)
+
+      // 创建需求单
+      await demandList.connect(creator).createDemand()
+      const demandId = 0
+      // 接受需求单
+      await demandList.connect(acceptor).acceptDemand(demandId)
+      const creatorDepositAmount = ethers.utils.parseEther('1')
+      const acceptorDepositAmount = ethers.utils.parseEther('1.5')
+      // 添加保证金
+      await marginContract.connect(creator).addDeposit(demandId, { value: creatorDepositAmount })
+      await marginContract.connect(acceptor).addDeposit(demandId, { value: acceptorDepositAmount })
+      // 锁定保证金
+      await marginContract.connect(creator).lockDeposit(demandId)
+
+      await expect(marginContract.connect(creator).lockDeposit(demandId)).to.be.revertedWith('Deposit is already locked')
+    })
+    it('如果接受者没有添加保证金,则不可以锁定', async function () {
+      const { demandList, creator, acceptor, marginContract } = await loadFixture(deployMarginContract)
+
+      // 创建需求单
+      await demandList.connect(creator).createDemand()
+      const demandId = 0
+      // 接受需求单
+      await demandList.connect(acceptor).acceptDemand(demandId)
+      const creatorDepositAmount = ethers.utils.parseEther('1')
+      // 添加保证金
+      await marginContract.connect(creator).addDeposit(demandId, { value: creatorDepositAmount })
+
+      await expect(marginContract.connect(creator).lockDeposit(demandId)).to.be.revertedWith('The acceptor has not yet added the deposit.')
+    })
+    it('既不是本需求单的创建者，也不是接受者的用户不可以锁定保证金', async function () {
+      const { demandList, creator, acceptor, marginContract, otherAccount } = await loadFixture(deployMarginContract)
+
+      // 创建需求单
+      await demandList.connect(creator).createDemand()
+      const demandId = 0
+      // 接受需求单
+      await demandList.connect(acceptor).acceptDemand(demandId)
+      const creatorDepositAmount = ethers.utils.parseEther('1')
+      const acceptorDepositAmount = ethers.utils.parseEther('1.5')
+      // 添加保证金
+      await marginContract.connect(creator).addDeposit(demandId, { value: creatorDepositAmount })
+      await marginContract.connect(acceptor).addDeposit(demandId, { value: acceptorDepositAmount })
+
+      await expect(marginContract.connect(otherAccount).lockDeposit(demandId)).to.be.revertedWith('Only the creator or acceptor of the demand order can lock the margin for this demand order')
+    })
+  })
+  describe('解锁保证金', function () {
+    it('成功解锁保证金', async function () {
+      const { demandList, creator, acceptor, marginContract } = await loadFixture(deployMarginContract)
+
+      // 创建需求单
+      await demandList.connect(creator).createDemand()
+      const demandId = 0
+      // 接受需求单
+      await demandList.connect(acceptor).acceptDemand(demandId)
+      const creatorDepositAmount = ethers.utils.parseEther('1')
+      const acceptorDepositAmount = ethers.utils.parseEther('1.5')
+      // 添加保证金
+      await marginContract.connect(creator).addDeposit(demandId, { value: creatorDepositAmount })
+      await marginContract.connect(acceptor).addDeposit(demandId, { value: acceptorDepositAmount })
+      // 锁定保证金
+      await marginContract.connect(creator).lockDeposit(demandId)
+      // 解锁保证金
+      await marginContract.connect(creator).unlockDeposit(demandId)
+
+      const margin = await marginContract.margins(demandId)
+      expect(margin.isDepositLocked).to.be.false
+    })
+
+    it('如果没有添加保证金,则不可以解锁', async function () {
+      const { demandList, creator, acceptor, marginContract } = await loadFixture(deployMarginContract)
+
+      // 创建需求单
+      await demandList.connect(creator).createDemand()
+      const demandId = 0
+      // 接受需求单
+      await demandList.connect(acceptor).acceptDemand(demandId)
+
+      await expect(marginContract.connect(creator).unlockDeposit(demandId)).to.be.revertedWith('Deposit not added')
+    })
+
+    it('如果保证金没有锁定,则不可以解锁', async function () {
+      const { demandList, creator, acceptor, marginContract } = await loadFixture(deployMarginContract)
+
+      // 创建需求单
+      await demandList.connect(creator).createDemand()
+      const demandId = 0
+      // 接受需求单
+      await demandList.connect(acceptor).acceptDemand(demandId)
+      const creatorDepositAmount = ethers.utils.parseEther('1')
+      const acceptorDepositAmount = ethers.utils.parseEther('1.5')
+      // 添加保证金
+      await marginContract.connect(creator).addDeposit(demandId, { value: creatorDepositAmount })
+      await marginContract.connect(acceptor).addDeposit(demandId, { value: acceptorDepositAmount })
+
+      await expect(marginContract.connect(creator).unlockDeposit(demandId)).to.be.revertedWith('Deposit is not locked')
+    })
+
+    it('既不是本需求单的创建者，也不是接受者的用户不可以解锁保证金', async function () {
+      const { demandList, creator, acceptor, marginContract, otherAccount } = await loadFixture(deployMarginContract)
+
+      // 创建需求单
+      await demandList.connect(creator).createDemand()
+      const demandId = 0
+      // 接受需求单
+      await demandList.connect(acceptor).acceptDemand(demandId)
+      const creatorDepositAmount = ethers.utils.parseEther('1')
+      const acceptorDepositAmount = ethers.utils.parseEther('1.5')
+      // 添加保证金
+      await marginContract.connect(creator).addDeposit(demandId, { value: creatorDepositAmount })
+      await marginContract.connect(acceptor).addDeposit(demandId, { value: acceptorDepositAmount })
+      // 锁定保证金
+      await marginContract.connect(creator).lockDeposit(demandId)
+
+      await expect(marginContract.connect(otherAccount).unlockDeposit(demandId)).to.be.revertedWith('Only the creator or acceptor of the demand order can unlock the margin for this demand order')
+    })
+  })
 })

@@ -15,7 +15,7 @@ contract MarginContract {
         bool isAcceptorWithdrawn; // 接受者是否已提取保证金
     }
 
-    DemandList private demandList; // DemandList合约实例
+    DemandList public demandList; // DemandList合约实例，这里的private应该修改为public，因为在交易单合约中需要访问到
 
     mapping(uint256 => Margin) public margins; // 需求单ID与保证金结构的映射
 
