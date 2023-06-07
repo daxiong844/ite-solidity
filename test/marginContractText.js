@@ -232,6 +232,7 @@ describe('MarginContract', function () {
       await expect(marginContract.connect(otherAccount).lockDeposit(demandId)).to.be.revertedWith('Only the creator or acceptor of the demand order can lock the margin for this demand order')
     })
   })
+
   describe('解锁保证金', function () {
     it('成功解锁保证金', async function () {
       const { demandList, creator, acceptor, marginContract } = await loadFixture(deployMarginContract)
@@ -301,6 +302,37 @@ describe('MarginContract', function () {
       await marginContract.connect(creator).lockDeposit(demandId)
 
       await expect(marginContract.connect(otherAccount).unlockDeposit(demandId)).to.be.revertedWith('Only the creator or acceptor of the demand order can unlock the margin for this demand order')
+    })
+  })
+
+  describe('退还保证金', function () {
+    it('成功退还保证金', async function () {
+      const { demandList, marginContract, creator, acceptor } = await loadFixture(deployMarginContract)
+
+      // 创建需求单
+      await demandList.connect(creator).createDemand()
+      const demandId = 0
+      // 接受需求单
+      await demandList.connect(acceptor).acceptDemand(demandId)
+      const creatorDepositAmount = ethers.utils.parseEther('10')
+      const acceptorDepositAmount = ethers.utils.parseEther('20')
+      // 添加保证金
+      await marginContract.connect(creator).addDeposit(demandId, { value: creatorDepositAmount })
+      await marginContract.connect(acceptor).addDeposit(demandId, { value: acceptorDepositAmount })
+
+      // 通过使用 .then() 方法，你可以访问返回对象中的 depositAcceptor 属性，并将其赋值给相应的变量
+      // 如果 margins(demandId) 返回的是一个异步函数或 Promise 对象，你需要确保在使用 .then() 方法之前使用 await 关键字来等待其完成
+      // const acceptorBalanceInit = await marginContract.margins(demandId).then(result => result.depositAcceptor)
+      // console.log(acceptorBalanceInit)
+
+      // 退还保证金
+      await marginContract.connect(creator).refund(0, 10)
+      // 查询下接受者的保证金剩余多少
+      const acceptorBalance = await marginContract.margins(demandId).then(result => result.depositAcceptor)
+      expect(acceptorBalance).to.equal(0)
+
+      // const balance = await ethers.provider.getBalance(acceptor.address) // 查询下接受者的账户余额
+      // console.log(balance)
     })
   })
 })

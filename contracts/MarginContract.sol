@@ -68,6 +68,7 @@ contract MarginContract {
             payable(msg.sender).transfer(margin.depositCreator);
             emit WithdrawnDeposit(demandId, msg.sender, margin.depositCreator);
         } else if (msg.sender == acceptor) {
+            require(margin.depositAcceptor != 0, 'Deposit not added');
             require(!margin.isAcceptorWithdrawn, "Acceptor's deposit already withdrawn");
             margin.isAcceptorWithdrawn = true;
             payable(msg.sender).transfer(margin.depositAcceptor);
@@ -107,5 +108,16 @@ contract MarginContract {
         margin.isDepositLocked = false;
 
         emit UnlockDeposit(demandId);
+    }
+
+    // 退还保证金金额
+    function refund(uint256 demandId, uint256 platformFee) external {
+        // 注意这里后面一个没用到了变量用一个逗号代替
+        (address creator, address acceptor, , ) = demandList.demands(demandId);
+        Margin storage margin = margins[demandId];
+        payable(creator).transfer(margin.depositCreator - platformFee / 2);
+        margin.depositCreator = 0;
+        payable(acceptor).transfer(margin.depositAcceptor - platformFee / 2);
+        margin.depositAcceptor = 0;
     }
 }
