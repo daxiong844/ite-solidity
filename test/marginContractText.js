@@ -105,7 +105,10 @@ describe('MarginContract', function () {
       // 提取保证金
       await marginContract.connect(creator).withdrawDeposit(demandId)
 
-      await expect(marginContract.connect(creator).withdrawDeposit(demandId)).to.be.revertedWith("Creator's deposit already withdrawn")
+      await expect(marginContract.connect(creator).withdrawDeposit(demandId)).to.be.revertedWith('Deposit not added')
+      // 检查创建者的保证金是否正确退还（已经退还的话保证金就会归零）
+      const creatorBalance = await marginContract.margins(demandId).then(result => result.depositCreator)
+      expect(creatorBalance).to.equal(0)
     })
     it('接受者成功提取保证金', async function () {
       const { demandList, creator, acceptor, marginContract } = await loadFixture(deployMarginContract)
@@ -123,7 +126,10 @@ describe('MarginContract', function () {
       // 提取保证金
       await marginContract.connect(acceptor).withdrawDeposit(demandId)
 
-      await expect(marginContract.connect(acceptor).withdrawDeposit(demandId)).to.be.revertedWith("Acceptor's deposit already withdrawn")
+      await expect(marginContract.connect(acceptor).withdrawDeposit(demandId)).to.be.revertedWith('Deposit not added')
+      // 检查接受者的保证金是否正确退还（已经退还的话保证金就会归零）
+      const acceptorBalance = await marginContract.margins(demandId).then(result => result.depositAcceptor)
+      expect(acceptorBalance).to.equal(0)
     })
     it('既不是本需求单的创建者,也不是接受者的用户不可以提取保证金', async function () {
       const { demandList, creator, acceptor, marginContract, otherAccount } = await loadFixture(deployMarginContract)
@@ -306,7 +312,7 @@ describe('MarginContract', function () {
   })
 
   describe('退还保证金', function () {
-    it('成功退还保证金', async function () {
+    it('成功退还保证金(履行交易时)', async function () {
       const { demandList, marginContract, creator, acceptor } = await loadFixture(deployMarginContract)
 
       // 创建需求单
@@ -314,25 +320,79 @@ describe('MarginContract', function () {
       const demandId = 0
       // 接受需求单
       await demandList.connect(acceptor).acceptDemand(demandId)
-      const creatorDepositAmount = ethers.utils.parseEther('10')
-      const acceptorDepositAmount = ethers.utils.parseEther('20')
+      const creatorDepositAmount = ethers.utils.parseEther('1')
+      const acceptorDepositAmount = ethers.utils.parseEther('2')
       // 添加保证金
       await marginContract.connect(creator).addDeposit(demandId, { value: creatorDepositAmount })
       await marginContract.connect(acceptor).addDeposit(demandId, { value: acceptorDepositAmount })
 
-      // 通过使用 .then() 方法，你可以访问返回对象中的 depositAcceptor 属性，并将其赋值给相应的变量
-      // 如果 margins(demandId) 返回的是一个异步函数或 Promise 对象，你需要确保在使用 .then() 方法之前使用 await 关键字来等待其完成
-      // const acceptorBalanceInit = await marginContract.margins(demandId).then(result => result.depositAcceptor)
-      // console.log(acceptorBalanceInit)
+      // 查询退还前的账户余额
+      const creatorBalanceBefore = await ethers.provider.getBalance(creator.address)
+      const acceptorBalanceBefore = await ethers.provider.getBalance(acceptor.address)
+      // console.log(creatorBalanceBefore)
+      // console.log(acceptorBalanceBefore)
 
       // 退还保证金
-      await marginContract.connect(creator).refund(0, 10)
+      const platformFee = ethers.utils.parseEther('0.1')
+      await marginContract.connect(creator).refund(0, platformFee)
+
+      // 查询退还后的账户余额
+      const creatorBalanceAfter = await ethers.provider.getBalance(creator.address)
+      const acceptorBalanceAfter = await ethers.provider.getBalance(acceptor.address)
+      // console.log(creatorBalanceAfter)
+      // console.log(acceptorBalanceAfter)
+
+      // 对比退还之后的账户余额肯定比退还前的高
+      expect(creatorBalanceBefore).to.be.lessThanOrEqual(creatorBalanceAfter)
+      expect(acceptorBalanceBefore).to.be.lessThanOrEqual(acceptorBalanceAfter)
+
       // 查询下接受者的保证金剩余多少
       const acceptorBalance = await marginContract.margins(demandId).then(result => result.depositAcceptor)
       expect(acceptorBalance).to.equal(0)
 
-      // const balance = await ethers.provider.getBalance(acceptor.address) // 查询下接受者的账户余额
-      // console.log(balance)
+      // 注：
+      // 通过使用 .then() 方法，你可以访问返回对象中的 depositAcceptor 属性，并将其赋值给相应的变量
+      // 如果 margins(demandId) 返回的是一个异步函数或 Promise 对象，你需要确保在使用 .then() 方法之前使用 await 关键字来等待其完成
+      // const acceptorBalanceInit = await marginContract.margins(demandId).then(result => result.depositAcceptor)
+      // console.log(acceptorBalanceInit)
+    })
+    it('成功退还保证金(取消交易时)', async function () {
+      const { demandList, marginContract, creator, acceptor } = await loadFixture(deployMarginContract)
+
+      // 创建需求单
+      await demandList.connect(creator).createDemand()
+      const demandId = 0
+      // 接受需求单
+      await demandList.connect(acceptor).acceptDemand(demandId)
+      const creatorDepositAmount = ethers.utils.parseEther('1')
+      const acceptorDepositAmount = ethers.utils.parseEther('2')
+      // 添加保证金
+      await marginContract.connect(creator).addDeposit(demandId, { value: creatorDepositAmount })
+      await marginContract.connect(acceptor).addDeposit(demandId, { value: acceptorDepositAmount })
+
+      // 查询退还前的账户余额
+      const creatorBalanceBefore = await ethers.provider.getBalance(creator.address)
+      const acceptorBalanceBefore = await ethers.provider.getBalance(acceptor.address)
+      // console.log(creatorBalanceBefore)
+      // console.log(acceptorBalanceBefore)
+
+      // 退还保证金
+      const platformFee = 0
+      await marginContract.connect(creator).refund(0, platformFee)
+
+      // 查询退还后的账户余额
+      const creatorBalanceAfter = await ethers.provider.getBalance(creator.address)
+      const acceptorBalanceAfter = await ethers.provider.getBalance(acceptor.address)
+      // console.log(creatorBalanceAfter)
+      // console.log(acceptorBalanceAfter)
+
+      // 对比退还之后的账户余额肯定比退还前的高
+      expect(creatorBalanceBefore).to.be.lessThanOrEqual(creatorBalanceAfter)
+      expect(acceptorBalanceBefore).to.be.lessThanOrEqual(acceptorBalanceAfter)
+
+      // 查询下接受者的保证金剩余多少
+      const acceptorBalance = await marginContract.margins(demandId).then(result => result.depositAcceptor)
+      expect(acceptorBalance).to.equal(0)
     })
   })
 })

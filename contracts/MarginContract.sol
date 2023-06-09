@@ -67,12 +67,14 @@ contract MarginContract {
             margin.isCreatorWithdrawn = true;
             payable(msg.sender).transfer(margin.depositCreator);
             emit WithdrawnDeposit(demandId, msg.sender, margin.depositCreator);
+            margin.depositCreator = 0;
         } else if (msg.sender == acceptor) {
             require(margin.depositAcceptor != 0, 'Deposit not added');
             require(!margin.isAcceptorWithdrawn, "Acceptor's deposit already withdrawn");
             margin.isAcceptorWithdrawn = true;
             payable(msg.sender).transfer(margin.depositAcceptor);
             emit WithdrawnDeposit(demandId, msg.sender, margin.depositAcceptor);
+            margin.depositAcceptor = 0;
         } else {
             revert('You do not meet the requirements');
         }
@@ -115,9 +117,17 @@ contract MarginContract {
         // 注意这里后面一个没用到了变量用一个逗号代替
         (address creator, address acceptor, , ) = demandList.demands(demandId);
         Margin storage margin = margins[demandId];
-        payable(creator).transfer(margin.depositCreator - platformFee / 2);
-        margin.depositCreator = 0;
-        payable(acceptor).transfer(margin.depositAcceptor - platformFee / 2);
-        margin.depositAcceptor = 0;
+
+        if (platformFee > 0) {
+            payable(creator).transfer(margin.depositCreator - platformFee / 2);
+            margin.depositCreator = 0;
+            payable(acceptor).transfer(margin.depositAcceptor - platformFee / 2);
+            margin.depositAcceptor = 0;
+        } else {
+            payable(creator).transfer(margin.depositCreator);
+            margin.depositCreator = 0;
+            payable(acceptor).transfer(margin.depositAcceptor);
+            margin.depositAcceptor = 0;
+        }
     }
 }
