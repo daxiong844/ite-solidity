@@ -1,9 +1,9 @@
 const { loadFixture } = require('@nomicfoundation/hardhat-network-helpers')
 const { expect } = require('chai')
 
-describe('TransactionContract', function () {
+describe('TransactionContractV2', function () {
   // 定义部署TransactionContract合约的辅助函数
-  async function deployTransactionContract() {
+  async function deployTransactionContractV2() {
     const [owner, creator, acceptor, otherAccount, platform] = await ethers.getSigners()
 
     // 部署WhiteList合约
@@ -31,24 +31,24 @@ describe('TransactionContract', function () {
     const marginContract = await MarginContract.deploy(profitContract.address, destroyFund.address, whiteList.address)
 
     // 部署TransactionContract合约，并传入合约地址作为构造函数参数
-    const TransactionContract = await ethers.getContractFactory('TransactionContract')
-    const transactionContract = await TransactionContract.deploy()
+    const TransactionContractV2 = await ethers.getContractFactory('TransactionContractV2')
+    const transactionContractV2 = await TransactionContractV2.deploy()
 
     // 初始化交易单合约所需的状态
-    await transactionContract.initialize(demandList.address, marginContract.address, iteToken.address, profitContract.address, destroyFund.address)
+    await transactionContractV2.initialize(demandList.address, marginContract.address, iteToken.address, profitContract.address, destroyFund.address)
 
-    return { owner, creator, acceptor, otherAccount, platform, whiteList, iteToken, demandList, profitContract, destroyFund, marginContract, transactionContract }
+    return { owner, creator, acceptor, otherAccount, platform, whiteList, iteToken, demandList, profitContract, destroyFund, marginContract, transactionContractV2 }
   }
 
   describe('创建交易单', function () {
     it('成功创建一个新的交易单', async function () {
-      const { demandList, transactionContract, creator, acceptor, iteToken, whiteList, marginContract } = await loadFixture(deployTransactionContract)
+      const { demandList, transactionContractV2, creator, acceptor, iteToken, whiteList, marginContract } = await loadFixture(deployTransactionContractV2)
 
       // 获得一下whiteList合约的实例
       await iteToken.setWhitelistContract(whiteList.address)
       // 将demandList、transactionContract添加到白名单中
       await whiteList.addAllowedContract(demandList.address)
-      await whiteList.addAllowedContract(transactionContract.address)
+      await whiteList.addAllowedContract(transactionContractV2.address)
 
       // 创建需求单
       const demandId = 'aaa'
@@ -59,9 +59,9 @@ describe('TransactionContract', function () {
       await marginContract.connect(acceptor).addDeposit({ value: (deposit * 15) / 10 })
 
       // 创建交易单(接受需求单)
-      await transactionContract.connect(acceptor).createTransaction(demandId)
+      await transactionContractV2.connect(acceptor).createTransaction(demandId)
 
-      const transaction = await transactionContract.transactions(demandId)
+      const transaction = await transactionContractV2.transactions(demandId)
       expect(transaction.acceptor).to.equal(acceptor.address)
       expect(transaction.creatorLockDeposit).to.equal(deposit)
       expect(transaction.acceptorLockDeposit).to.equal((deposit * 15) / 10)
@@ -73,13 +73,13 @@ describe('TransactionContract', function () {
 
   describe('履行交易单', function () {
     it('成功履行交易单', async function () {
-      const { demandList, transactionContract, creator, acceptor, iteToken, whiteList, marginContract } = await loadFixture(deployTransactionContract)
+      const { demandList, transactionContractV2, creator, acceptor, iteToken, whiteList, marginContract } = await loadFixture(deployTransactionContractV2)
 
       // 获得一下whiteList合约的实例
       await iteToken.setWhitelistContract(whiteList.address)
       // 将demandList、transactionContract添加到白名单中
       await whiteList.addAllowedContract(demandList.address)
-      await whiteList.addAllowedContract(transactionContract.address)
+      await whiteList.addAllowedContract(transactionContractV2.address)
 
       // 创建需求单
       const demandId = 'aaa'
@@ -90,16 +90,16 @@ describe('TransactionContract', function () {
       await marginContract.connect(acceptor).addDeposit({ value: (deposit * 15) / 10 })
 
       // 创建交易单(接受需求单)
-      await transactionContract.connect(acceptor).createTransaction(demandId)
+      await transactionContractV2.connect(acceptor).createTransaction(demandId)
 
-      await transactionContract.connect(creator).fulfillTransaction(demandId)
-      const transaction = await transactionContract.transactions(demandId)
-      expect(transaction.isCreatorFulfilled).to.be.true
-      expect(transaction.isAcceptorFulfilled).to.be.false
+      await transactionContractV2.connect(acceptor).fulfillTransaction(demandId)
+      const transaction = await transactionContractV2.transactions(demandId)
+      expect(transaction.isCreatorFulfilled).to.be.false
+      expect(transaction.isAcceptorFulfilled).to.be.true
       expect(transaction.status).to.equal(0)
 
-      await transactionContract.connect(acceptor).fulfillTransaction(demandId)
-      const transaction2 = await transactionContract.transactions(demandId)
+      await transactionContractV2.connect(creator).fulfillTransaction(demandId)
+      const transaction2 = await transactionContractV2.transactions(demandId)
       expect(transaction2.isCreatorFulfilled).to.be.true
       expect(transaction2.isAcceptorFulfilled).to.be.true
       expect(transaction2.status).to.equal(1)
@@ -108,13 +108,13 @@ describe('TransactionContract', function () {
 
   describe('取消交易单', function () {
     it('成功取消交易单', async function () {
-      const { demandList, transactionContract, creator, acceptor, iteToken, whiteList, marginContract } = await loadFixture(deployTransactionContract)
+      const { demandList, transactionContractV2, creator, acceptor, iteToken, whiteList, marginContract } = await loadFixture(deployTransactionContractV2)
 
       // 获得一下whiteList合约的实例
       await iteToken.setWhitelistContract(whiteList.address)
       // 将demandList、transactionContract添加到白名单中
       await whiteList.addAllowedContract(demandList.address)
-      await whiteList.addAllowedContract(transactionContract.address)
+      await whiteList.addAllowedContract(transactionContractV2.address)
 
       // 创建需求单
       const demandId = 'aaa'
@@ -125,15 +125,15 @@ describe('TransactionContract', function () {
       await marginContract.connect(acceptor).addDeposit({ value: (deposit * 15) / 10 })
 
       // 创建交易单(接受需求单)
-      await transactionContract.connect(acceptor).createTransaction(demandId)
+      await transactionContractV2.connect(acceptor).createTransaction(demandId)
 
-      await transactionContract.connect(creator).cancelTransaction(demandId)
-      let transaction = await transactionContract.transactions(demandId)
+      await transactionContractV2.connect(creator).cancelTransaction(demandId)
+      let transaction = await transactionContractV2.transactions(demandId)
       expect(transaction.isCreatorCancelled).to.be.true
       expect(transaction.isAcceptorCancelled).to.be.false
 
-      await transactionContract.connect(acceptor).cancelTransaction(demandId)
-      transaction = await transactionContract.transactions(demandId)
+      await transactionContractV2.connect(acceptor).cancelTransaction(demandId)
+      transaction = await transactionContractV2.transactions(demandId)
       expect(transaction.isAcceptorCancelled).to.be.true
       expect(transaction.status).to.equal(2)
     })
@@ -141,13 +141,13 @@ describe('TransactionContract', function () {
 
   describe('摧毁交易单', function () {
     it('成功摧毁交易单', async function () {
-      const { demandList, transactionContract, creator, acceptor, iteToken, whiteList, marginContract } = await loadFixture(deployTransactionContract)
+      const { demandList, transactionContractV2, creator, acceptor, iteToken, whiteList, marginContract } = await loadFixture(deployTransactionContractV2)
 
       // 获得一下whiteList合约的实例
       await iteToken.setWhitelistContract(whiteList.address)
       // 将demandList、transactionContract添加到白名单中
       await whiteList.addAllowedContract(demandList.address)
-      await whiteList.addAllowedContract(transactionContract.address)
+      await whiteList.addAllowedContract(transactionContractV2.address)
 
       // 创建需求单
       const demandId = 'aaa'
@@ -158,10 +158,10 @@ describe('TransactionContract', function () {
       await marginContract.connect(acceptor).addDeposit({ value: (deposit * 15) / 10 })
 
       // 创建交易单(接受需求单)
-      await transactionContract.connect(acceptor).createTransaction(demandId)
+      await transactionContractV2.connect(acceptor).createTransaction(demandId)
 
-      await transactionContract.connect(creator).destroyTransaction(demandId)
-      const transaction = await transactionContract.transactions(demandId)
+      await transactionContractV2.connect(creator).destroyTransaction(demandId)
+      const transaction = await transactionContractV2.transactions(demandId)
       expect(transaction.status).to.equal(3)
     })
   })

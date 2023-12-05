@@ -1,4 +1,8 @@
+require('@openzeppelin/hardhat-upgrades')
+const { task } = require('hardhat/config')
 require('@nomicfoundation/hardhat-toolbox')
+require('@openzeppelin/hardhat-upgrades')
+require('@typechain/hardhat')
 
 /** @type import('hardhat/config').HardhatUserConfig */
 
@@ -6,7 +10,7 @@ const { TASK_COMPILE_SOLIDITY_GET_SOLC_BUILD } = require('hardhat/builtin-tasks/
 const path = require('path')
 
 subtask(TASK_COMPILE_SOLIDITY_GET_SOLC_BUILD, async (args, hre, runSuper) => {
-  if (args.solcVersion === '0.8.16') {
+  if (args.solcVersion === '0.8.2') {
     const compilerPath = path.join(__dirname, 'node_modules/solc/soljson.js')
 
     return {
@@ -24,10 +28,19 @@ subtask(TASK_COMPILE_SOLIDITY_GET_SOLC_BUILD, async (args, hre, runSuper) => {
 })
 
 module.exports = {
-  solidity: '0.8.16',
   networks: {
     localhost: {
       url: 'http://127.0.0.1:8545'
+    }
+  },
+  solidity: {
+    version: '0.8.2',
+    // 启用优化器（Enable Optimizer）,尝试减小合约的代码大小并提高执行效率
+    settings: {
+      optimizer: {
+        enabled: true,
+        runs: 200
+      }
     }
   }
 }

@@ -1,133 +1,178 @@
 // SPDX-License-Identifier: MIT
 
-pragma solidity ^0.8.16;
+pragma solidity ^0.8.2;
 
-import './DemandList.sol';
+import './ProfitContract.sol';
+import './DestroyFund.sol';
+import './WhiteList.sol';
+import '@openzeppelin/contracts/utils/math/SafeMath.sol';
 
 contract MarginContract {
-    //保证金结构
-    struct Margin {
-        uint256 demandId; // 用作需求单和保证金之间的关联标识
-        uint256 depositCreator; // 创建者缴纳的保证金金额
-        uint256 depositAcceptor; // 接受者缴纳的保证金金额
-        bool isDepositLocked; // 保证金是否已锁定
-        bool isCreatorWithdrawn; // 创建者是否已提取保证金
-        bool isAcceptorWithdrawn; // 接受者是否已提取保证金
-    }
+    using SafeMath for uint256; //为了uint256后面使用 sub ,add方法，，，
+    mapping(address => uint256) public userWithdrawableProfit; // 用户 与 它账户内的保证金数 之间的对应关系
+    mapping(address => uint256) public userLockProfit; // 用户 与 它锁定的保证金数 之间的对应关系
 
-    DemandList public demandList; // DemandList合约实例，这里的private应该修改为public，因为在交易单合约中需要访问到
+    address payable public profitContract; // 使用address payable类型
+    address payable public destroyFund; // 使用address payable类型
+    WhiteList public whiteListContract; // WhiteList合约实例
 
-    mapping(uint256 => Margin) public margins; // 需求单ID与保证金结构的映射
+    event DepositAdded(address indexed user, uint256 amount); // 添加保证金事件
+    event DepositWithdrawn(address indexed user, uint256 amount); // 提取保证金事件
+    event DepositLocked(address indexed user, uint256 amount); // 锁定保证金事件
+    event DepositUnlocked(address indexed user, uint256 amount); // 解锁保证金事件
 
-    event AddDeposit(uint256 demandId, address account, uint256 amount); // 添加保证金事件
-    event WithdrawnDeposit(uint256 demandId, address account, uint256 amount); // 提取保证金事件
-    event LockDeposit(uint256 demandId); // 锁定保证金事件
-    event UnlockDeposit(uint256 demandId); // 解锁保证金事件
-
-    constructor(address demandListAddress) {
-        demandList = DemandList(demandListAddress);
+    constructor(address profitContractAddress, address destroyFundAddress, address whiteListAddress) {
+        profitContract = payable(profitContractAddress); // 进行类型转换
+        destroyFund = payable(destroyFundAddress); // 进行类型转换
+        whiteListContract = WhiteList(whiteListAddress);
     }
 
     // 添加保证金
-    function addDeposit(uint256 demandId) external payable {
-        // 此行代码也可以直接使用margins[demandId]来访问状态变量的映射并进行修改，
-        // 如果函数较简单且不需要多次访问保证金结构，可直接通过margins[demandId]进行操作，而不用在函数内声明局部变量margin
-        Margin storage margin = margins[demandId];
-        require(margin.demandId == 0, 'Deposit already added');
+    function addDeposit() external payable {
+        userWithdrawableProfit[msg.sender] = userWithdrawableProfit[msg.sender].add(msg.value);
 
-        // 注意这里后面一个没用到了变量用一个逗号代替
-        (address creator, address acceptor, bool isAccepted, ) = demandList.demands(demandId);
-
-        if (creator == msg.sender) {
-            // 此行代码应该是可有可无，因为需求单不接受的话，甲方也可以添加保证金
-            require(isAccepted, 'Demand not accepted yet');
-            margin.depositCreator = msg.value;
-        } else if (acceptor == msg.sender) {
-            require(isAccepted, 'Demand not accepted yet');
-            require(margin.depositCreator > 0, 'Creator deposit not set');
-            require(msg.value >= (margin.depositCreator * 15) / 10 && msg.value <= (margin.depositCreator * 2), "Deposit amount should be 1.5-2 times the creator's deposit");
-            margin.depositAcceptor = msg.value;
-        }
-
-        margin.demandId = demandId;
-
-        emit AddDeposit(demandId, msg.sender, msg.value);
+        emit DepositAdded(msg.sender, msg.value);
     }
 
     // 提取保证金
-    function withdrawDeposit(uint256 demandId) external {
-        Margin storage margin = margins[demandId];
-        require(margin.depositCreator != 0, 'Deposit not added');
+    function withdrawDeposit(uint256 amount) external {
+        require(amount <= userWithdrawableProfit[msg.sender].sub(userLockProfit[msg.sender]), 'Insufficient balance');
+        // 更新用户与可提取出去的金额数
+        userWithdrawableProfit[msg.sender] = userWithdrawableProfit[msg.sender].sub(amount);
+        payable(msg.sender).transfer(amount);
 
-        // 注意这里后面两个没用到了变量用两个逗号代替
-        (address creator, address acceptor, , ) = demandList.demands(demandId);
-
-        if (msg.sender == creator) {
-            require(!margin.isCreatorWithdrawn, "Creator's deposit already withdrawn");
-            margin.isCreatorWithdrawn = true;
-            payable(msg.sender).transfer(margin.depositCreator);
-            emit WithdrawnDeposit(demandId, msg.sender, margin.depositCreator);
-            margin.depositCreator = 0;
-        } else if (msg.sender == acceptor) {
-            require(margin.depositAcceptor != 0, 'Deposit not added');
-            require(!margin.isAcceptorWithdrawn, "Acceptor's deposit already withdrawn");
-            margin.isAcceptorWithdrawn = true;
-            payable(msg.sender).transfer(margin.depositAcceptor);
-            emit WithdrawnDeposit(demandId, msg.sender, margin.depositAcceptor);
-            margin.depositAcceptor = 0;
-        } else {
-            revert('You do not meet the requirements');
-        }
+        emit DepositWithdrawn(msg.sender, amount);
     }
 
     // 锁定保证金
-    function lockDeposit(uint256 demandId) external {
-        Margin storage margin = margins[demandId];
-        (address creator, address acceptor, , ) = demandList.demands(demandId);
+    function lockDeposit(address account, uint256 amount) external {
+        require(whiteListContract.whitelist(msg.sender), 'Address is not whitelisted');
+        require(userLockProfit[account].add(amount) <= userWithdrawableProfit[account], 'Insufficient balance');
+        // 锁定传入数量的保证金
+        userLockProfit[account] = userLockProfit[account].add(amount);
 
-        require(margin.depositCreator != 0, 'Deposit not added');
-        // 甲乙双方需要都添加了保证金之后，才可以锁定
-        require(margin.depositAcceptor > 0, 'The acceptor has not yet added the deposit.');
-        require(!margin.isDepositLocked, 'Deposit is already locked');
-        // 只能是甲方或者乙方才可以锁定保证金
-        require(msg.sender == creator || msg.sender == acceptor, 'Only the creator or acceptor of the demand order can lock the margin for this demand order');
-
-        margin.isDepositLocked = true;
-
-        emit LockDeposit(demandId);
+        emit DepositLocked(account, amount);
     }
 
     // 解锁保证金
-    function unlockDeposit(uint256 demandId) external {
-        Margin storage margin = margins[demandId];
-        (address creator, address acceptor, , ) = demandList.demands(demandId);
+    function unlockDeposit(address account, uint256 amount) external {
+        require(whiteListContract.whitelist(msg.sender), 'Address is not whitelisted');
+        require(userLockProfit[account] >= amount, 'Insufficient balance');
+        // 解锁传入数量的保证金
+        userLockProfit[account] = userLockProfit[account].sub(amount);
 
-        require(margin.depositCreator != 0, 'Deposit not added');
-        require(margin.isDepositLocked, 'Deposit is not locked');
-        // 只能是甲方或者乙方才可以解锁保证金
-        require(msg.sender == creator || msg.sender == acceptor, 'Only the creator or acceptor of the demand order can unlock the margin for this demand order');
-
-        margin.isDepositLocked = false;
-
-        emit UnlockDeposit(demandId);
+        emit DepositUnlocked(account, amount);
     }
 
-    // 退还保证金金额
-    function refund(uint256 demandId, uint256 platformFee) external {
-        // 注意这里后面一个没用到了变量用一个逗号代替
-        (address creator, address acceptor, , ) = demandList.demands(demandId);
-        Margin storage margin = margins[demandId];
+    // 公开的用于修改userWithdrawableProfit的值
+    function setUserWithdrawableProfit(address account, uint256 amount) external {
+        require(whiteListContract.whitelist(msg.sender), 'Address is not whitelisted');
+        userWithdrawableProfit[account] = amount;
+    }
 
-        if (platformFee > 0) {
-            payable(creator).transfer(margin.depositCreator - platformFee / 2);
-            margin.depositCreator = 0;
-            payable(acceptor).transfer(margin.depositAcceptor - platformFee / 2);
-            margin.depositAcceptor = 0;
-        } else {
-            payable(creator).transfer(margin.depositCreator);
-            margin.depositCreator = 0;
-            payable(acceptor).transfer(margin.depositAcceptor);
-            margin.depositAcceptor = 0;
-        }
+    // 向利润合约转账（私有的只可以本合约内部调用）
+    function transferToProfitContract(uint256 account) public {
+        require(whiteListContract.whitelist(msg.sender), 'Address is not whitelisted');
+        (bool success, ) = profitContract.call{value: account}(''); // 使用profitContract进行转账
+        require(success, 'Transfer to contract failed');
+    }
+
+    // 向摧毁资金合约合约转账（私有的只可以本合约内部调用）
+    function transferToDestroyFund(uint256 account) public {
+        require(whiteListContract.whitelist(msg.sender), 'Address is not whitelisted');
+        (bool success, ) = destroyFund.call{value: account}(''); // 使用destroyFund进行转账
+        require(success, 'Transfer to contract failed');
     }
 }
+
+// import './ProfitContract.sol';
+// import './DestroyFund.sol';
+// import './WhiteList.sol';
+// import '@openzeppelin/contracts/utils/math/SafeMath.sol';
+// import '@openzeppelin/contracts/token/ERC20/IERC20.sol';
+
+// contract MarginContract {
+//     using SafeMath for uint256; //为了uint256后面使用 sub ,add方法，，，
+//     mapping(address => uint256) public userWithdrawableProfit; // 用户 与 它账户内的保证金数 之间的对应关系
+//     mapping(address => uint256) public userLockProfit; // 用户 与 它锁定的保证金数 之间的对应关系
+
+//     address payable public profitContract; // 使用address payable类型
+//     address payable public destroyFund; // 使用address payable类型
+//     WhiteList public whiteListContract; // WhiteList合约实例
+//     address public usdtAddress; // USDT合约地址
+
+//     event DepositAdded(address indexed user, uint256 amount); // 添加保证金事件
+//     event DepositWithdrawn(address indexed user, uint256 amount); // 提取保证金事件
+//     event DepositLocked(address indexed user, uint256 amount); // 锁定保证金事件
+//     event DepositUnlocked(address indexed user, uint256 amount); // 解锁保证金事件
+
+//     constructor(address profitContractAddress, address destroyFundAddress, address whiteListAddress, address usdtContractAddress) {
+//         profitContract = payable(profitContractAddress); // 进行类型转换
+//         destroyFund = payable(destroyFundAddress); // 进行类型转换
+//         whiteListContract = WhiteList(whiteListAddress);
+//         usdtAddress = usdtContractAddress;
+//     }
+
+//     // 添加保证金
+//     function addDeposit(uint256 amount) external payable {
+//         IERC20 usdt = IERC20(usdtAddress);
+//         require(amount > 0, 'Amount must be greater than 0');
+//         require(usdt.allowance(msg.sender, address(this)) >= amount, 'Insufficient allowance');
+//         usdt.transferFrom(msg.sender, address(this), amount);
+//         userWithdrawableProfit[msg.sender] = userWithdrawableProfit[msg.sender].add(amount);
+
+//         emit DepositAdded(msg.sender, amount);
+//     }
+
+//     // 提取保证金
+//     function withdrawDeposit(uint256 amount) external {
+//         require(amount <= userWithdrawableProfit[msg.sender].sub(userLockProfit[msg.sender]), 'Insufficient balance');
+//         // 更新用户与可提取出去的金额数
+//         userWithdrawableProfit[msg.sender] = userWithdrawableProfit[msg.sender].sub(amount);
+//         IERC20(usdtAddress).transfer(msg.sender, amount);
+
+//         emit DepositWithdrawn(msg.sender, amount);
+//     }
+
+//     // 锁定保证金
+//     function lockDeposit(address account, uint256 amount) external {
+//         require(whiteListContract.whitelist(msg.sender), 'Address is not whitelisted');
+//         require(userLockProfit[account].add(amount) <= userWithdrawableProfit[account], 'Insufficient balance');
+//         // 锁定传入数量的保证金
+//         userLockProfit[account] = userLockProfit[account].add(amount);
+
+//         emit DepositLocked(account, amount);
+//     }
+
+//     // 解锁保证金
+//     function unlockDeposit(address account, uint256 amount) external {
+//         require(whiteListContract.whitelist(msg.sender), 'Address is not whitelisted');
+//         require(userLockProfit[account] >= amount, 'Insufficient balance');
+//         // 解锁传入数量的保证金
+//         userLockProfit[account] = userLockProfit[account].sub(amount);
+
+//         emit DepositUnlocked(account, amount);
+//     }
+
+//     // 公开的用于修改userWithdrawableProfit的值
+//     function setUserWithdrawableProfit(address account, uint256 amount) external {
+//         require(whiteListContract.whitelist(msg.sender), 'Address is not whitelisted');
+//         userWithdrawableProfit[account] = amount;
+//     }
+
+//     // 向利润合约转账（私有的只可以本合约内部调用）
+//     function transferToProfitContract(uint256 amount) public {
+//         require(whiteListContract.whitelist(msg.sender), 'Address is not whitelisted');
+//         IERC20 usdt = IERC20(usdtAddress);
+//         usdt.transferFrom(address(this), profitContract, amount);
+//         emit DepositWithdrawn(msg.sender, amount);
+//     }
+
+//     // 向摧毁资金合约合约转账（私有的只可以本合约内部调用）
+//     function transferToDestroyFund(uint256 amount) public {
+//         require(whiteListContract.whitelist(msg.sender), 'Address is not whitelisted');
+//         IERC20 usdt = IERC20(usdtAddress);
+//         usdt.transferFrom(address(this), destroyFund, amount);
+//         emit DepositWithdrawn(msg.sender, amount);
+//     }
+// }

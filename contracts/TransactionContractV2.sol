@@ -10,20 +10,19 @@ import './DestroyFund.sol';
 // import '@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol';
 // import '@openzeppelin/contracts-upgradeable/utils/math/SafeMathUpgradeable.sol';
 import '@openzeppelin/contracts/utils/math/SafeMath.sol';
-
 import '@openzeppelin/contracts/proxy/utils/Initializable.sol';
 
-interface ProfitContractInterface {
+interface ProfitContractInterfaceV2 {
     // 定义 ProfitContract 合约的函数声明
     function addProfitShare(address userAddress) external;
 }
 
-interface DestroyFundInterface {
+interface DestroyFundInterfaceV2 {
     // 定义 DestroyFund 合约的函数声明
     function addDestroyShare(address userAddress) external;
 }
 
-contract TransactionContract is Initializable {
+contract TransactionContractV2 is Initializable {
     using SafeMath for uint256; //为了uint256后面使用 sub ,add方法，，，
 
     // 交易单状态枚举
@@ -49,8 +48,10 @@ contract TransactionContract is Initializable {
     DemandList private demandList; // DemandList合约实例
     MarginContract private marginContract; // MarginContract合约实例
     IteToken private iteToken; // IteToken合约实例
-    ProfitContractInterface public profitContract;
-    DestroyFundInterface public destroyFund;
+    ProfitContractInterfaceV2 public profitContract;
+    DestroyFundInterfaceV2 public destroyFund;
+
+    bool private initialized; // 标记合约是否已初始化
 
     event TransactionCreated(string demandId, address indexed creator, address indexed acceptor); // 创建交易单事件
     event TransactionFulfilled(string demandId, address indexed creator, address indexed acceptor); // 履约交易单事件
@@ -61,20 +62,20 @@ contract TransactionContract is Initializable {
     //     demandList = DemandList(demandListAddress); // 创建DemandList合约实例
     //     marginContract = MarginContract(marginContractAddress); // 创建MarginContract合约实例
     //     iteToken = IteToken(iteTokenAddress); // 创建IteToken合约实例
-    //     profitContract = ProfitContractInterface(profitContractAddress); // 转换为 ProfitContract 合约实例
-    //     destroyFund = DestroyFundInterface(destroyFundAddress); // 转换为 DestroyFund 合约实例
+    //     profitContract = ProfitContractInterfaceV2(profitContractAddress); // 转换为 ProfitContract 合约实例
+    //     destroyFund = DestroyFundInterfaceV2(destroyFundAddress); // 转换为 DestroyFund 合约实例
     // }
 
     function initialize(address demandListAddress, address marginContractAddress, address iteTokenAddress, address profitContractAddress, address destroyFundAddress) public initializer {
         demandList = DemandList(demandListAddress);
         marginContract = MarginContract(marginContractAddress);
         iteToken = IteToken(iteTokenAddress);
-        profitContract = ProfitContractInterface(profitContractAddress);
-        destroyFund = DestroyFundInterface(destroyFundAddress);
+        profitContract = ProfitContractInterfaceV2(profitContractAddress);
+        destroyFund = DestroyFundInterfaceV2(destroyFundAddress);
     }
 
     // 创建交易单(乙方调用此方法)
-    function createTransaction(string memory demandId) external {
+    function createTransaction(string memory demandId) external virtual {
         // 通过需求单号获得甲方的地址和保证金数
         (address creator, uint256 deposit) = demandList.demands(demandId);
 
@@ -103,20 +104,21 @@ contract TransactionContract is Initializable {
     }
 
     // 履行交易单（甲乙双方都同意履约之后）
-    function fulfillTransaction(string memory demandId) external virtual {
+
+    function fulfillTransaction(string memory demandId) external {
         // 通过需求单号获得甲方的地址和保证金数
         (address creator, ) = demandList.demands(demandId);
 
         if (msg.sender == creator && transactions[demandId].status == TransactionStatus.Locked) {
             transactions[demandId].isCreatorFulfilled = true;
-        } else if (msg.sender == transactions[demandId].acceptor && transactions[demandId].status == TransactionStatus.Locked && transactions[demandId].isCreatorFulfilled) {
+        } else if (msg.sender == transactions[demandId].acceptor && transactions[demandId].status == TransactionStatus.Locked) {
             // 交易单状态设置为完成
             transactions[demandId].isAcceptorFulfilled = true;
         } else {
-            revert('Only the creator or acceptor can fulfill the transaction'); // 只有创建者或接受者可以履行交易
+            revert('Only the creator or acceptor can fulfill the transaction'); // 只有创建者或接受者可以取消交易
         }
 
-        if (transactions[demandId].isCreatorFulfilled && transactions[demandId].isAcceptorFulfilled) {
+        if (transactions[demandId].isAcceptorFulfilled && transactions[demandId].isCreatorFulfilled) {
             // 交易单状态设置为完成
             transactions[demandId].status = TransactionStatus.Finished;
 
@@ -152,7 +154,7 @@ contract TransactionContract is Initializable {
     }
 
     // 取消交易
-    function cancelTransaction(string memory demandId) external {
+    function cancelTransaction(string memory demandId) external virtual {
         // 通过需求单号获得甲方的地址和保证金数
         (address creator, ) = demandList.demands(demandId);
         require(transactions[demandId].status != TransactionStatus.Finished, 'Transaction is Finished');
@@ -181,7 +183,7 @@ contract TransactionContract is Initializable {
     }
 
     // 销毁交易
-    function destroyTransaction(string memory demandId) external {
+    function destroyTransaction(string memory demandId) external virtual {
         // 通过需求单号获得甲方的地址和保证金数
         (address creator, ) = demandList.demands(demandId);
         require(transactions[demandId].status != TransactionStatus.Finished, 'Transaction is Finished');
@@ -210,3 +212,82 @@ contract TransactionContract is Initializable {
         emit TransactionDestroyed(demandId, creator, transactions[demandId].acceptor);
     }
 }
+
+// pragma solidity ^0.8.2;
+
+// // 导入必要的接口和库，并定义新的实现
+// import './TransactionContract.sol';
+// import './DemandList.sol'; // 添加DemandList合约的引入
+// import './MarginContract.sol'; // 添加MarginContract合约的引入
+// import './IteToken.sol'; // 添加IteToken合约的引入
+// import '@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol';
+
+// contract TransactionContractV2 is Initializable, TransactionContract {
+//     DemandList private demandListV2; // 添加DemandList合约实例
+//     MarginContract private marginContractV2; // 添加MarginContract合约实例
+//     IteToken private iteTokenV2; // 添加IteToken合约实例
+
+//     // 构造函数用于初始化合约
+//     // constructor(address demandListAddress, address marginContractAddress, address iteTokenAddress, address profitContractAddress, address destroyFundAddress) TransactionContract(demandListAddress, marginContractAddress, iteTokenAddress, profitContractAddress, destroyFundAddress) {
+//     //     demandListV2 = DemandList(demandListAddress);
+//     //     marginContractV2 = MarginContract(marginContractAddress);
+//     //     iteTokenV2 = IteToken(iteTokenAddress);
+//     // }
+
+//     function initialize(address demandListAddress, address marginContractAddress, address iteTokenAddress, address profitContractAddress, address destroyFundAddress) public override initializer {
+//         TransactionContract.initialize(demandListAddress, marginContractAddress, iteTokenAddress, profitContractAddress, destroyFundAddress);
+
+//         demandListV2 = DemandList(demandListAddress);
+//         marginContractV2 = MarginContract(marginContractAddress);
+//         iteTokenV2 = IteToken(iteTokenAddress);
+//     }
+
+//     // 履行交易单（甲乙双方都同意履约之后）
+//     function fulfillTransaction(uint256 demandId) external override {
+//         // 通过需求单号获得甲方的地址和保证金数
+//         (address creator, ) = demandListV2.demands(demandId);
+
+//         if (msg.sender == creator && transactions[demandId].status == TransactionStatus.Locked) {
+//             transactions[demandId].isCreatorFulfilled = true;
+//         } else if (msg.sender == transactions[demandId].acceptor && transactions[demandId].status == TransactionStatus.Locked) {
+//             // 交易单状态设置为完成
+//             transactions[demandId].isAcceptorFulfilled = true;
+//         } else {
+//             revert('Only the creator or acceptor can fulfill the transaction'); // 只有创建者或接受者可以取消交易
+//         }
+
+//         if (transactions[demandId].isAcceptorFulfilled && transactions[demandId].isCreatorFulfilled) {
+//             // 交易单状态设置为完成
+//             transactions[demandId].status = TransactionStatus.Finished;
+
+//             // 分别解锁甲乙的保证金
+//             marginContractV2.unlockDeposit(creator, transactions[demandId].creatorLockDeposit);
+//             marginContractV2.unlockDeposit(transactions[demandId].acceptor, transactions[demandId].acceptorLockDeposit);
+
+//             // 甲乙双方保证金之和
+//             uint256 totalDeposit = transactions[demandId].creatorLockDeposit + transactions[demandId].acceptorLockDeposit;
+//             // 此时也需要减去甲乙双方各自的保证金数
+//             uint256 currentCreatorDeposit = marginContractV2.userWithdrawableProfit(creator) - totalDeposit / 200;
+//             marginContractV2.setUserWithdrawableProfit(creator, currentCreatorDeposit);
+//             uint256 currentAcceptorDeposit = marginContractV2.userWithdrawableProfit(transactions[demandId].acceptor) - totalDeposit / 200;
+//             marginContractV2.setUserWithdrawableProfit(transactions[demandId].acceptor, currentAcceptorDeposit);
+//             // 收取平台利润（扣除平台费用）
+//             marginContractV2.transferToProfitContract(totalDeposit / 100);
+
+//             // 更新分润份额
+//             profitContract.addProfitShare(creator);
+//             profitContract.addProfitShare(msg.sender);
+
+//             // 更新摧毁份额
+//             destroyFund.addDestroyShare(creator);
+//             destroyFund.addDestroyShare(msg.sender);
+
+//             // 摧毁代币
+//             (bool success, ) = address(iteTokenV2).call(abi.encodeWithSignature('burnIteToken()'));
+//             require(success, 'burnIteToken call failed');
+
+//             // 触发交易单完成事件
+//             emit TransactionFulfilled(demandId, creator, transactions[demandId].acceptor);
+//         }
+//     }
+// }
